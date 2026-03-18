@@ -1,0 +1,19 @@
+version: "3.9"
+services:
+  cryptotrader:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      - COINBASE_API_KEY=${COINBASE_API_KEY:-YOUR_COINBASE_API_KEY}
+      - COINBASE_API_SECRET=${COINBASE_API_SECRET:-YOUR_COINBASE_API_SECRET}
+      - KRAKEN_API_KEY=${KRAKEN_API_KEY:-YOUR_KRAKEN_API_KEY}
+      - KRAKEN_API_SECRET=${KRAKEN_API_SECRET:-YOUR_KRAKEN_PRIVATE_KEY}
+      - BINANCE_API_KEY=${BINANCE_API_KEY:-YOUR_BINANCE_API_KEY}
+      - BINANCE_API_SECRET=${BINANCE_API_SECRET:-YOUR_BINANCE_SECRET_KEY}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3

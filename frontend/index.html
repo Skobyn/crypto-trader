@@ -1,0 +1,654 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>CryptoTrader — Paper Trading Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #0a0c10;
+    --surface: #12161e;
+    --surface2: #1a1f2e;
+    --border: #2a3045;
+    --accent: #6c63ff;
+    --accent2: #00d4aa;
+    --green: #00e676;
+    --red: #ff5252;
+    --yellow: #ffd740;
+    --text: #e8eaf0;
+    --muted: #6b7280;
+    --font: 'Inter', system-ui, -apple-system, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: var(--font); font-size: 14px; }
+
+  /* Layout */
+  header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 12px 24px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .logo { font-size: 18px; font-weight: 700; letter-spacing: -0.5px; }
+  .logo span { color: var(--accent); }
+  .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); display: inline-block; margin-right: 6px; animation: pulse 2s infinite; }
+  @keyframes pulse { 0%, 100% { opacity: 1 } 50% { opacity: 0.4 } }
+
+  .grid { display: grid; grid-template-columns: 320px 1fr; grid-template-rows: auto 1fr; gap: 0; height: calc(100vh - 53px); }
+  .sidebar { background: var(--surface); border-right: 1px solid var(--border); overflow-y: auto; display: flex; flex-direction: column; }
+  .main { display: flex; flex-direction: column; overflow: hidden; }
+
+  /* Cards */
+  .card { background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+  .card-title { font-size: 11px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; color: var(--muted); margin-bottom: 12px; }
+
+  /* Sidebar sections */
+  .sidebar-section { padding: 16px; border-bottom: 1px solid var(--border); }
+  .sidebar-title { font-size: 11px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; color: var(--muted); margin-bottom: 12px; }
+
+  /* Wallet */
+  .pnl-value { font-size: 28px; font-weight: 700; letter-spacing: -1px; }
+  .pnl-pos { color: var(--green); }
+  .pnl-neg { color: var(--red); }
+  .wallet-row { display: flex; justify-content: space-between; margin-bottom: 6px; font-size: 13px; }
+  .wallet-label { color: var(--muted); }
+
+  /* Positions */
+  .position-row { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 10px; margin-bottom: 8px; }
+  .pos-symbol { font-weight: 600; font-size: 13px; }
+  .pos-row { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .pos-pnl { font-weight: 600; }
+
+  /* Strategy controls */
+  .control-group { margin-bottom: 14px; }
+  .control-label { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+  .control-label span { color: var(--text); font-weight: 500; }
+  input[type=range] {
+    width: 100%; appearance: none; height: 4px; border-radius: 2px;
+    background: var(--border); outline: none; cursor: pointer;
+  }
+  input[type=range]::-webkit-slider-thumb {
+    appearance: none; width: 14px; height: 14px; border-radius: 50%;
+    background: var(--accent); cursor: pointer;
+  }
+
+  select {
+    width: 100%; background: var(--surface); border: 1px solid var(--border);
+    color: var(--text); padding: 7px 10px; border-radius: 6px; font-size: 13px;
+    outline: none; cursor: pointer;
+  }
+  select:focus { border-color: var(--accent); }
+
+  .btn {
+    width: 100%; padding: 9px; border-radius: 6px; border: none;
+    font-size: 13px; font-weight: 600; cursor: pointer; transition: opacity 0.15s;
+  }
+  .btn:hover { opacity: 0.85; }
+  .btn-primary { background: var(--accent); color: #fff; }
+  .btn-danger { background: var(--red); color: #fff; margin-top: 8px; }
+  .btn-success { background: var(--green); color: #000; }
+
+  .toggle { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
+  .toggle-label { font-size: 13px; }
+  .toggle-switch {
+    position: relative; width: 40px; height: 22px; cursor: pointer;
+  }
+  .toggle-switch input { opacity: 0; width: 0; height: 0; }
+  .slider-track {
+    position: absolute; inset: 0; background: var(--border); border-radius: 11px; transition: 0.2s;
+  }
+  .slider-track:before {
+    content: ''; position: absolute; width: 16px; height: 16px; border-radius: 50%;
+    background: white; left: 3px; top: 3px; transition: 0.2s;
+  }
+  input:checked + .slider-track { background: var(--accent); }
+  input:checked + .slider-track:before { transform: translateX(18px); }
+
+  /* Main area */
+  .main-top { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; padding: 16px; border-bottom: 1px solid var(--border); }
+  .ticker-card {
+    background: var(--surface2); border: 1px solid var(--border); border-radius: 8px;
+    padding: 12px; cursor: pointer; transition: border-color 0.15s;
+  }
+  .ticker-card:hover, .ticker-card.active { border-color: var(--accent); }
+  .ticker-symbol { font-size: 11px; font-weight: 600; color: var(--muted); }
+  .ticker-price { font-size: 18px; font-weight: 700; margin: 4px 0; }
+  .ticker-change { font-size: 12px; font-weight: 500; }
+  .up { color: var(--green); }
+  .down { color: var(--red); }
+
+  .main-middle { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 0 16px 16px; flex: 1; overflow: hidden; }
+  .chart-container { background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 16px; display: flex; flex-direction: column; }
+  .chart-wrap { flex: 1; position: relative; min-height: 0; }
+
+  /* Trade log */
+  .trade-log { background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 16px; overflow: hidden; display: flex; flex-direction: column; }
+  .trade-table { flex: 1; overflow-y: auto; }
+  table { width: 100%; border-collapse: collapse; }
+  th { font-size: 11px; font-weight: 600; text-transform: uppercase; color: var(--muted); padding: 6px 8px; text-align: left; border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--surface2); }
+  td { padding: 6px 8px; font-size: 12px; border-bottom: 1px solid rgba(42,48,69,0.5); }
+  tr:hover td { background: rgba(108,99,255,0.05); }
+  .badge { display: inline-block; padding: 2px 7px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+  .badge-buy { background: rgba(0,230,118,0.15); color: var(--green); }
+  .badge-sell { background: rgba(255,82,82,0.15); color: var(--red); }
+
+  /* Halted banner */
+  .halt-banner {
+    background: rgba(255,215,64,0.15); border: 1px solid var(--yellow);
+    color: var(--yellow); padding: 8px 16px; font-size: 12px; font-weight: 600;
+    text-align: center; display: none;
+  }
+
+  /* Scrollbars */
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  @media (max-width: 900px) {
+    .grid { grid-template-columns: 1fr; }
+    .main-top { grid-template-columns: repeat(3, 1fr); }
+    .main-middle { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">Crypto<span>Trader</span> <small style="font-size:11px;color:var(--muted);font-weight:400;">paper mode</small></div>
+  <div style="display:flex;align-items:center;gap:16px">
+    <span><span class="status-dot" id="connDot"></span><span id="connStatus" style="font-size:12px;color:var(--muted)">Connecting...</span></span>
+    <span style="font-size:12px;color:var(--muted)" id="clockEl"></span>
+  </div>
+</header>
+
+<div id="haltBanner" class="halt-banner">⚠ Trading halted — daily loss limit reached</div>
+
+<div class="grid">
+  <!-- SIDEBAR -->
+  <aside class="sidebar">
+
+    <!-- Wallet -->
+    <div class="sidebar-section">
+      <div class="sidebar-title">Portfolio</div>
+      <div class="pnl-value" id="portfolioValue">$100,000.00</div>
+      <div style="font-size:13px;margin-top:4px;">
+        <span id="totalPnlPct" class="up">+0.00%</span>
+        <span style="color:var(--muted);margin:0 4px">all time</span>
+        <span id="dailyPnl" style="color:var(--muted)">$0 today</span>
+      </div>
+      <div style="margin-top:14px">
+        <div class="wallet-row"><span class="wallet-label">Cash</span><span id="cashEl">$100,000.00</span></div>
+        <div class="wallet-row"><span class="wallet-label">Invested</span><span id="investedEl">$0.00</span></div>
+        <div class="wallet-row"><span class="wallet-label">Total P&L</span><span id="totalPnlEl">$0.00</span></div>
+      </div>
+    </div>
+
+    <!-- Positions -->
+    <div class="sidebar-section">
+      <div class="sidebar-title">Open Positions</div>
+      <div id="positionsEl"><div style="color:var(--muted);font-size:13px;">No open positions</div></div>
+    </div>
+
+    <!-- Strategy -->
+    <div class="sidebar-section">
+      <div class="sidebar-title">Strategy</div>
+
+      <div class="control-group">
+        <div class="control-label">Strategy</div>
+        <select id="strategySelect">
+          <option value="momentum">Momentum (SMA crossover)</option>
+          <option value="mean_reversion">Mean Reversion (Bollinger)</option>
+          <option value="grid">Grid Trading</option>
+          <option value="dca">Dollar Cost Average</option>
+        </select>
+      </div>
+
+      <div class="toggle">
+        <label class="toggle-switch">
+          <input type="checkbox" id="botEnabled" checked />
+          <span class="slider-track"></span>
+        </label>
+        <span class="toggle-label" id="botLabel">Bot Active</span>
+      </div>
+
+      <div class="control-group">
+        <div class="control-label">Risk per trade <span id="riskVal">2%</span></div>
+        <input type="range" id="riskSlider" min="0.1" max="10" step="0.1" value="2" />
+      </div>
+
+      <div class="control-group">
+        <div class="control-label">Leverage <span id="leverageVal">1×</span></div>
+        <input type="range" id="leverageSlider" min="1" max="10" step="0.5" value="1" />
+      </div>
+
+      <div class="control-group">
+        <div class="control-label">Max daily loss <span id="maxLossVal">5%</span></div>
+        <input type="range" id="maxLossSlider" min="1" max="50" step="0.5" value="5" />
+      </div>
+
+      <div class="control-group">
+        <div class="control-label">Max position size <span id="maxPosVal">20%</span></div>
+        <input type="range" id="maxPosSlider" min="5" max="100" step="1" value="20" />
+      </div>
+
+      <div class="control-group">
+        <div class="control-label">Trade frequency <span id="freqVal">30s</span></div>
+        <input type="range" id="freqSlider" min="5" max="120" step="5" value="30" />
+      </div>
+
+      <button class="btn btn-primary" id="applyBtn">Apply Settings</button>
+      <button class="btn btn-danger" id="resetBtn">Reset Wallet</button>
+    </div>
+
+    <!-- Exchange config (stub) -->
+    <div class="sidebar-section">
+      <div class="sidebar-title">Exchange (Live Mode)</div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:10px;">Set API keys to enable live trading (disabled in paper mode)</div>
+      <select style="margin-bottom:8px">
+        <option>Coinbase Advanced</option>
+        <option>Kraken</option>
+        <option>Binance</option>
+      </select>
+      <input style="width:100%;background:var(--surface);border:1px solid var(--border);color:var(--muted);padding:7px 10px;border-radius:6px;font-size:12px;margin-bottom:6px" placeholder="API Key (placeholder)" disabled />
+      <input style="width:100%;background:var(--surface);border:1px solid var(--border);color:var(--muted);padding:7px 10px;border-radius:6px;font-size:12px" placeholder="API Secret (placeholder)" disabled />
+      <div style="font-size:11px;color:var(--accent);margin-top:8px;">Paper trading only. Live exchange integration available in backend/main.py</div>
+    </div>
+
+  </aside>
+
+  <!-- MAIN -->
+  <main class="main">
+
+    <!-- Tickers -->
+    <div class="main-top" id="tickersEl"></div>
+
+    <!-- Charts + Trade Log -->
+    <div class="main-middle">
+      <div class="chart-container">
+        <div class="card-title" id="chartTitle">BTC/USD — Price</div>
+        <div class="chart-wrap"><canvas id="priceChart"></canvas></div>
+      </div>
+
+      <div class="trade-log">
+        <div class="card-title">Trade Log <span id="tradeCount" style="color:var(--muted);font-weight:400">0 trades</span></div>
+        <div class="trade-table">
+          <table>
+            <thead>
+              <tr>
+                <th>Time</th><th>Symbol</th><th>Side</th><th>Qty</th><th>Price</th><th>Value</th><th>P&L</th><th>Reason</th>
+              </tr>
+            </thead>
+            <tbody id="tradeBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<script>
+// -------------------------------------------------------------------------
+// State
+// -------------------------------------------------------------------------
+const API = window.location.origin.replace(/^http/, 'http');
+const WS_URL = window.location.origin.replace(/^http/, 'ws') + '/ws';
+
+let prices = {};
+let priceHistory = {};
+let wallet = {};
+let trades = [];
+let strategy = {};
+let selectedSymbol = 'BTC/USD';
+let priceChart = null;
+let ws = null;
+let chartDatasets = {};
+
+const SYMBOLS = ['BTC/USD', 'ETH/USD', 'SOL/USD', 'DOGE/USD', 'MATIC/USD'];
+const COLORS = {
+  'BTC/USD': '#f7931a',
+  'ETH/USD': '#627eea',
+  'SOL/USD': '#9945ff',
+  'DOGE/USD': '#c2a633',
+  'MATIC/USD': '#8247e5',
+};
+
+// -------------------------------------------------------------------------
+// WebSocket
+// -------------------------------------------------------------------------
+function connect() {
+  ws = new WebSocket(WS_URL);
+  ws.onopen = () => {
+    document.getElementById('connDot').style.background = 'var(--green)';
+    document.getElementById('connStatus').textContent = 'Live';
+  };
+  ws.onclose = () => {
+    document.getElementById('connDot').style.background = 'var(--red)';
+    document.getElementById('connStatus').textContent = 'Reconnecting...';
+    setTimeout(connect, 2000);
+  };
+  ws.onerror = () => ws.close();
+  ws.onmessage = (e) => {
+    const msg = JSON.parse(e.data);
+    if (msg.type === 'snapshot') {
+      prices = msg.prices;
+      wallet = msg.wallet;
+      strategy = msg.strategy;
+      trades = msg.trades;
+      priceHistory = msg.history;
+      initUI();
+    } else if (msg.type === 'prices') {
+      const old = {...prices};
+      prices = msg.data;
+      updateTickers(old);
+      updateChart();
+    } else if (msg.type === 'wallet') {
+      wallet = msg.data;
+      renderWallet();
+      renderPositions();
+    } else if (msg.type === 'trade') {
+      trades.unshift(msg.data);
+      renderTradeLog();
+    } else if (msg.type === 'strategy') {
+      strategy = msg.data;
+      syncControls();
+    }
+  };
+}
+
+// -------------------------------------------------------------------------
+// Init
+// -------------------------------------------------------------------------
+function initUI() {
+  renderTickers();
+  renderWallet();
+  renderPositions();
+  renderTradeLog();
+  syncControls();
+  initChart();
+}
+
+// -------------------------------------------------------------------------
+// Tickers
+// -------------------------------------------------------------------------
+function renderTickers() {
+  const el = document.getElementById('tickersEl');
+  el.innerHTML = SYMBOLS.map(s => `
+    <div class="ticker-card ${s === selectedSymbol ? 'active' : ''}" onclick="selectSymbol('${s}')" id="ticker-${s.replace('/','_')}">
+      <div class="ticker-symbol">${s.split('/')[0]}</div>
+      <div class="ticker-price" id="price-${s.replace('/','_')}">${fmt(prices[s] || 0, s)}</div>
+      <div class="ticker-change" id="change-${s.replace('/','_')}">—</div>
+    </div>
+  `).join('');
+}
+
+function updateTickers(old) {
+  SYMBOLS.forEach(s => {
+    const priceEl = document.getElementById('price-' + s.replace('/','_'));
+    const changeEl = document.getElementById('change-' + s.replace('/','_'));
+    if (!priceEl) return;
+    const cur = prices[s];
+    const prev = old[s] || cur;
+    const pct = ((cur - prev) / prev) * 100;
+    priceEl.textContent = fmt(cur, s);
+    changeEl.textContent = (pct >= 0 ? '+' : '') + pct.toFixed(3) + '%';
+    changeEl.className = 'ticker-change ' + (pct >= 0 ? 'up' : 'down');
+
+    // Flash
+    priceEl.style.transition = 'color 0.2s';
+    priceEl.style.color = pct >= 0 ? 'var(--green)' : 'var(--red)';
+    setTimeout(() => priceEl.style.color = '', 400);
+
+    // Append to history
+    if (!priceHistory[s]) priceHistory[s] = [];
+    priceHistory[s].push({ t: Date.now(), p: cur });
+    if (priceHistory[s].length > 200) priceHistory[s].shift();
+  });
+}
+
+function selectSymbol(s) {
+  selectedSymbol = s;
+  document.querySelectorAll('.ticker-card').forEach(el => el.classList.remove('active'));
+  const el = document.getElementById('ticker-' + s.replace('/','_'));
+  if (el) el.classList.add('active');
+  document.getElementById('chartTitle').textContent = s + ' — Price';
+  rebuildChart();
+}
+
+// -------------------------------------------------------------------------
+// Wallet
+// -------------------------------------------------------------------------
+function renderWallet() {
+  const pv = wallet.portfolio_value || 0;
+  const pnlPct = wallet.pnl_pct || 0;
+  const dpnl = wallet.daily_pnl || 0;
+  document.getElementById('portfolioValue').textContent = '$' + pv.toLocaleString('en-US', {minimumFractionDigits:2,maximumFractionDigits:2});
+  const pctEl = document.getElementById('totalPnlPct');
+  pctEl.textContent = (pnlPct >= 0 ? '+' : '') + pnlPct.toFixed(3) + '%';
+  pctEl.className = pnlPct >= 0 ? 'up' : 'down';
+  document.getElementById('dailyPnl').textContent = (dpnl >= 0 ? '+' : '') + '$' + Math.abs(dpnl).toLocaleString('en-US', {minimumFractionDigits:2}) + ' today';
+  document.getElementById('cashEl').textContent = '$' + (wallet.cash||0).toLocaleString('en-US', {minimumFractionDigits:2});
+  const invested = pv - (wallet.cash||0);
+  document.getElementById('investedEl').textContent = '$' + Math.max(0, invested).toLocaleString('en-US', {minimumFractionDigits:2});
+  const tpnl = wallet.total_pnl || 0;
+  const tpnlEl = document.getElementById('totalPnlEl');
+  tpnlEl.textContent = (tpnl >= 0 ? '+' : '') + '$' + tpnl.toLocaleString('en-US', {minimumFractionDigits:2});
+  tpnlEl.style.color = tpnl >= 0 ? 'var(--green)' : 'var(--red)';
+
+  // Halt banner
+  document.getElementById('haltBanner').style.display = wallet.trading_halted ? 'block' : 'none';
+}
+
+function renderPositions() {
+  const el = document.getElementById('positionsEl');
+  const positions = wallet.positions || {};
+  const keys = Object.keys(positions);
+  if (!keys.length) {
+    el.innerHTML = '<div style="color:var(--muted);font-size:13px;">No open positions</div>';
+    return;
+  }
+  el.innerHTML = keys.map(sym => {
+    const p = positions[sym];
+    const pnlPos = p.pnl >= 0;
+    return `
+      <div class="position-row">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <span class="pos-symbol">${sym.split('/')[0]}</span>
+          <span class="pos-pnl ${pnlPos ? 'up' : 'down'}">${pnlPos?'+':''}$${p.pnl.toLocaleString('en-US',{minimumFractionDigits:2})}</span>
+        </div>
+        <div class="pos-row">
+          <span>${p.qty} @ $${p.avg_price.toLocaleString()}</span>
+          <span class="${pnlPos?'up':'down'}">${pnlPos?'+':''}${p.pnl_pct.toFixed(2)}%</span>
+        </div>
+        <div class="pos-row">
+          <span>Value: $${p.value.toLocaleString('en-US',{minimumFractionDigits:2})}</span>
+          <span>Now: $${p.current_price.toLocaleString()}</span>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+// -------------------------------------------------------------------------
+// Trade log
+// -------------------------------------------------------------------------
+function renderTradeLog() {
+  const tbody = document.getElementById('tradeBody');
+  document.getElementById('tradeCount').textContent = trades.length + ' trades';
+  tbody.innerHTML = trades.slice(0,100).map(t => {
+    const ts = new Date(t.ts);
+    const timeStr = ts.toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+    const pnl = t.pnl !== undefined ? ((t.pnl >= 0 ? '+' : '') + '$' + t.pnl.toFixed(2)) : '—';
+    const pnlClass = t.pnl !== undefined ? (t.pnl >= 0 ? 'up' : 'down') : '';
+    return `
+      <tr>
+        <td style="color:var(--muted)">${timeStr}</td>
+        <td>${t.symbol}</td>
+        <td><span class="badge badge-${t.side.toLowerCase()}">${t.side}</span></td>
+        <td>${t.qty}</td>
+        <td>$${t.price.toLocaleString('en-US',{minimumFractionDigits:2})}</td>
+        <td>$${t.value.toLocaleString('en-US',{minimumFractionDigits:2})}</td>
+        <td class="${pnlClass}">${pnl}</td>
+        <td style="color:var(--muted);font-size:11px">${t.reason}</td>
+      </tr>
+    `;
+  }).join('');
+}
+
+// -------------------------------------------------------------------------
+// Chart
+// -------------------------------------------------------------------------
+function initChart() {
+  const ctx = document.getElementById('priceChart').getContext('2d');
+  const hist = priceHistory[selectedSymbol] || [];
+  const labels = hist.map(h => new Date(h.t).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'}));
+  const data = hist.map(h => h.p);
+
+  priceChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        label: selectedSymbol,
+        data,
+        borderColor: COLORS[selectedSymbol] || '#6c63ff',
+        backgroundColor: (COLORS[selectedSymbol] || '#6c63ff') + '22',
+        borderWidth: 2,
+        pointRadius: 0,
+        fill: true,
+        tension: 0.3,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      animation: { duration: 0 },
+      plugins: { legend: { display: false }, tooltip: {
+        backgroundColor: 'rgba(26,31,46,0.95)',
+        borderColor: 'rgba(108,99,255,0.3)',
+        borderWidth: 1,
+        callbacks: { label: ctx => '$' + ctx.raw.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:6}) }
+      }},
+      scales: {
+        x: { grid: { color: 'rgba(42,48,69,0.5)' }, ticks: { color: '#6b7280', maxTicksLimit: 8 } },
+        y: { grid: { color: 'rgba(42,48,69,0.5)' }, ticks: { color: '#6b7280', callback: v => '$' + v.toLocaleString() } }
+      }
+    }
+  });
+}
+
+function rebuildChart() {
+  if (priceChart) { priceChart.destroy(); priceChart = null; }
+  initChart();
+}
+
+function updateChart() {
+  if (!priceChart) return;
+  const hist = priceHistory[selectedSymbol] || [];
+  if (!hist.length) return;
+  const last = hist[hist.length - 1];
+  priceChart.data.labels.push(new Date(last.t).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'}));
+  priceChart.data.datasets[0].data.push(last.p);
+  // Keep max 200 points
+  if (priceChart.data.labels.length > 200) {
+    priceChart.data.labels.shift();
+    priceChart.data.datasets[0].data.shift();
+  }
+  priceChart.update('none');
+}
+
+// -------------------------------------------------------------------------
+// Strategy controls
+// -------------------------------------------------------------------------
+function syncControls() {
+  document.getElementById('strategySelect').value = strategy.active_strategy || 'momentum';
+  document.getElementById('botEnabled').checked = strategy.enabled !== false;
+  document.getElementById('botLabel').textContent = strategy.enabled !== false ? 'Bot Active' : 'Bot Paused';
+  document.getElementById('riskSlider').value = strategy.risk_pct || 2;
+  document.getElementById('riskVal').textContent = (strategy.risk_pct || 2) + '%';
+  document.getElementById('leverageSlider').value = strategy.leverage || 1;
+  document.getElementById('leverageVal').textContent = (strategy.leverage || 1) + '×';
+  document.getElementById('maxLossSlider').value = strategy.max_daily_loss_pct || 5;
+  document.getElementById('maxLossVal').textContent = (strategy.max_daily_loss_pct || 5) + '%';
+  document.getElementById('maxPosSlider').value = strategy.max_position_size_pct || 20;
+  document.getElementById('maxPosVal').textContent = (strategy.max_position_size_pct || 20) + '%';
+  document.getElementById('freqSlider').value = strategy.trade_frequency || 30;
+  document.getElementById('freqVal').textContent = (strategy.trade_frequency || 30) + 's';
+}
+
+// Slider live labels
+function bindSlider(id, valId, suffix) {
+  document.getElementById(id).addEventListener('input', e => {
+    document.getElementById(valId).textContent = e.target.value + suffix;
+  });
+}
+bindSlider('riskSlider', 'riskVal', '%');
+bindSlider('leverageSlider', 'leverageVal', '×');
+bindSlider('maxLossSlider', 'maxLossVal', '%');
+bindSlider('maxPosSlider', 'maxPosVal', '%');
+bindSlider('freqSlider', 'freqVal', 's');
+
+document.getElementById('botEnabled').addEventListener('change', e => {
+  document.getElementById('botLabel').textContent = e.target.checked ? 'Bot Active' : 'Bot Paused';
+});
+
+document.getElementById('applyBtn').addEventListener('click', async () => {
+  const payload = {
+    active_strategy: document.getElementById('strategySelect').value,
+    enabled: document.getElementById('botEnabled').checked,
+    risk_pct: parseFloat(document.getElementById('riskSlider').value),
+    leverage: parseFloat(document.getElementById('leverageSlider').value),
+    max_daily_loss_pct: parseFloat(document.getElementById('maxLossSlider').value),
+    max_position_size_pct: parseFloat(document.getElementById('maxPosSlider').value),
+    trade_frequency: parseInt(document.getElementById('freqSlider').value),
+  };
+  const r = await fetch(API + '/api/strategy', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+  const data = await r.json();
+  strategy = data;
+  syncControls();
+  flashBtn('applyBtn', 'Applied!', 'var(--green)');
+});
+
+document.getElementById('resetBtn').addEventListener('click', async () => {
+  if (!confirm('Reset wallet to $100,000? All positions and trades will be cleared.')) return;
+  await fetch(API + '/api/reset', { method:'POST' });
+  trades = [];
+  renderTradeLog();
+  flashBtn('resetBtn', 'Reset!', 'var(--yellow)');
+});
+
+function flashBtn(id, text, color) {
+  const btn = document.getElementById(id);
+  const orig = btn.textContent;
+  btn.textContent = text;
+  btn.style.background = color;
+  btn.style.color = '#000';
+  setTimeout(() => {
+    btn.textContent = orig;
+    btn.style.background = '';
+    btn.style.color = '';
+  }, 1500);
+}
+
+// -------------------------------------------------------------------------
+// Helpers
+// -------------------------------------------------------------------------
+function fmt(price, symbol) {
+  if (price < 1) return '$' + price.toFixed(4);
+  if (price < 100) return '$' + price.toFixed(2);
+  return '$' + price.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+}
+
+function clock() {
+  document.getElementById('clockEl').textContent = new Date().toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+}
+setInterval(clock, 1000);
+clock();
+
+// -------------------------------------------------------------------------
+// Boot
+// -------------------------------------------------------------------------
+connect();
+</script>
+</body>
+</html>
