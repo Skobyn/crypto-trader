@@ -437,6 +437,14 @@ class StrategyUpdate(BaseModel):
     enabled: Optional[bool] = None
 
 
+class SetBalanceRequest(BaseModel):
+    amount: float
+
+
+class DepositRequest(BaseModel):
+    amount: float
+
+
 @app.post("/api/strategy")
 async def update_strategy(update: StrategyUpdate):
     if update.active_strategy is not None:
@@ -461,6 +469,7 @@ async def update_strategy(update: StrategyUpdate):
 async def reset_wallet():
     global trading_halted
     wallet["cash"] = 100_000.0
+    wallet["initial_cash"] = 100_000.0
     wallet["positions"] = {}
     wallet["daily_pnl"] = 0.0
     wallet["total_pnl"] = 0.0
@@ -473,6 +482,50 @@ async def reset_wallet():
         price_history[sym].clear()
     await broadcast_wallet()
     return {"status": "reset"}
+
+
+@app.post("/api/set-balance")
+async def set_balance(req: SetBalanceRequest):
+    global trading_halted
+    amount = round(req.amount, 2)
+    if amount <= 0:
+        return {"error": "Amount must be positive"}, 400
+    wallet["cash"] = amount
+    wallet["initial_cash"] = amount
+    wallet["positions"] = {}
+    wallet["daily_pnl"] = 0.0
+    wallet["total_pnl"] = 0.0
+    wallet["peak_value"] = amount
+    wallet["day_start_value"] = amount
+    trade_log.clear()
+    trading_halted = False
+    await broadcast_wallet()
+    await broadcast({"type": "trades_reset"})
+    return {"status": "ok", "balance": amount}
+
+
+@app.post("/api/deposit")
+async def deposit(req: DepositRequest):
+    amount = round(req.amount, 2)
+    if amount <= 0:
+        return {"error": "Amount must be positive"}, 400
+    wallet["cash"] += amount
+    wallet["initial_cash"] += amount
+    wallet["peak_value"] = max(wallet["peak_value"], portfolio_value())
+    deposit_entry = {
+        "id": str(uuid.uuid4())[:8],
+        "ts": datetime.now(timezone.utc).isoformat(),
+        "symbol": "—",
+        "side": "DEPOSIT",
+        "qty": 0,
+        "price": 0,
+        "value": amount,
+        "reason": f"Manual deposit",
+    }
+    trade_log.append(deposit_entry)
+    await broadcast_wallet()
+    await broadcast({"type": "trade", "data": deposit_entry})
+    return {"status": "ok", "deposited": amount, "new_cash": round(wallet["cash"], 2)}
 
 
 # ---------------------------------------------------------------------------

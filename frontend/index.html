@@ -88,6 +88,16 @@
   .btn-primary { background: var(--accent); color: #fff; }
   .btn-danger { background: var(--red); color: #fff; margin-top: 8px; }
   .btn-success { background: var(--green); color: #000; }
+  .btn-accent2 { background: var(--accent2); color: #000; }
+
+  .input-row { display: flex; gap: 6px; margin-bottom: 8px; }
+  .input-row input[type=number] {
+    flex: 1; background: var(--surface); border: 1px solid var(--border);
+    color: var(--text); padding: 7px 10px; border-radius: 6px; font-size: 13px;
+    outline: none;
+  }
+  .input-row input[type=number]:focus { border-color: var(--accent); }
+  .input-row .btn { width: auto; padding: 7px 14px; white-space: nowrap; flex-shrink: 0; }
 
   .toggle { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
   .toggle-label { font-size: 13px; }
@@ -132,6 +142,7 @@
   .badge { display: inline-block; padding: 2px 7px; border-radius: 4px; font-size: 11px; font-weight: 600; }
   .badge-buy { background: rgba(0,230,118,0.15); color: var(--green); }
   .badge-sell { background: rgba(255,82,82,0.15); color: var(--red); }
+  .badge-deposit { background: rgba(0,212,170,0.15); color: var(--accent2); }
 
   /* Halted banner */
   .halt-banner {
@@ -181,6 +192,23 @@
         <div class="wallet-row"><span class="wallet-label">Cash</span><span id="cashEl">$100,000.00</span></div>
         <div class="wallet-row"><span class="wallet-label">Invested</span><span id="investedEl">$0.00</span></div>
         <div class="wallet-row"><span class="wallet-label">Total P&L</span><span id="totalPnlEl">$0.00</span></div>
+      </div>
+    </div>
+
+    <!-- Wallet Controls -->
+    <div class="sidebar-section">
+      <div class="sidebar-title">Wallet Controls</div>
+
+      <div style="font-size:12px;color:var(--muted);margin-bottom:8px;">Starting Balance — resets wallet & clears trades</div>
+      <div class="input-row">
+        <input type="number" id="startBalanceInput" min="100" step="1000" value="10000" placeholder="e.g. 10000" />
+        <button class="btn btn-primary" id="setBalanceBtn">Set Balance</button>
+      </div>
+
+      <div style="font-size:12px;color:var(--muted);margin-bottom:8px;margin-top:12px;">Deposit Funds — add fake money anytime</div>
+      <div class="input-row">
+        <input type="number" id="depositInput" min="1" step="500" value="5000" placeholder="e.g. 5000" />
+        <button class="btn btn-accent2" id="depositBtn">Deposit</button>
       </div>
     </div>
 
@@ -350,6 +378,9 @@ function connect() {
     } else if (msg.type === 'trade') {
       trades.unshift(msg.data);
       renderTradeLog();
+    } else if (msg.type === 'trades_reset') {
+      trades = [];
+      renderTradeLog();
     } else if (msg.type === 'strategy') {
       strategy = msg.data;
       syncControls();
@@ -479,8 +510,19 @@ function renderTradeLog() {
   tbody.innerHTML = trades.slice(0,100).map(t => {
     const ts = new Date(t.ts);
     const timeStr = ts.toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+    const isDeposit = t.side === 'DEPOSIT';
     const pnl = t.pnl !== undefined ? ((t.pnl >= 0 ? '+' : '') + '$' + t.pnl.toFixed(2)) : '—';
     const pnlClass = t.pnl !== undefined ? (t.pnl >= 0 ? 'up' : 'down') : '';
+    if (isDeposit) {
+      return `
+        <tr>
+          <td style="color:var(--muted)">${timeStr}</td>
+          <td colspan="5"><span class="badge badge-deposit">DEPOSIT</span> <span style="color:var(--accent2);font-weight:600">+$${t.value.toLocaleString('en-US',{minimumFractionDigits:2})}</span></td>
+          <td>—</td>
+          <td style="color:var(--muted);font-size:11px">${t.reason}</td>
+        </tr>
+      `;
+    }
     return `
       <tr>
         <td style="color:var(--muted)">${timeStr}</td>
@@ -644,6 +686,38 @@ function clock() {
 }
 setInterval(clock, 1000);
 clock();
+
+// -------------------------------------------------------------------------
+// Wallet controls
+// -------------------------------------------------------------------------
+document.getElementById('setBalanceBtn').addEventListener('click', async () => {
+  const amount = parseFloat(document.getElementById('startBalanceInput').value);
+  if (!amount || amount <= 0) { alert('Enter a valid amount'); return; }
+  if (!confirm(`Reset wallet to $${amount.toLocaleString('en-US', {minimumFractionDigits:2})}? All positions and trades will be cleared.`)) return;
+  const r = await fetch(API + '/api/set-balance', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ amount }),
+  });
+  const data = await r.json();
+  if (data.error) { alert(data.error); return; }
+  trades = [];
+  renderTradeLog();
+  flashBtn('setBalanceBtn', '✓ Set!', 'var(--green)');
+});
+
+document.getElementById('depositBtn').addEventListener('click', async () => {
+  const amount = parseFloat(document.getElementById('depositInput').value);
+  if (!amount || amount <= 0) { alert('Enter a valid amount'); return; }
+  const r = await fetch(API + '/api/deposit', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ amount }),
+  });
+  const data = await r.json();
+  if (data.error) { alert(data.error); return; }
+  flashBtn('depositBtn', '✓ Deposited!', 'var(--accent2)');
+});
 
 // -------------------------------------------------------------------------
 // Boot
